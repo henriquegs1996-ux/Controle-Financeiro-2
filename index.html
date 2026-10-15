@@ -98,6 +98,44 @@ html{scroll-behavior:smooth}body{overflow-x:hidden}.app{width:100%;max-width:100
   </section>
 </main>
 </div>
+
+<div class="modal-backdrop" id="syncModal" role="dialog" aria-modal="true" aria-labelledby="syncTitle">
+  <div class="modal">
+    <div class="modal-head">
+      <h2 id="syncTitle">Sincronização na nuvem</h2>
+      <button class="xbtn" id="closeSync" type="button" aria-label="Fechar">×</button>
+    </div>
+    <p class="hint">Configure seu projeto Supabase e entre com seu e-mail e senha para sincronizar seus dados entre dispositivos.</p>
+    <form id="syncConfigForm">
+      <div class="form-grid">
+        <div class="field wide">
+          <label for="supabaseUrl">URL do projeto Supabase</label>
+          <input id="supabaseUrl" type="url" placeholder="https://seu-projeto.supabase.co" required>
+        </div>
+        <div class="field wide">
+          <label for="supabaseKey">Chave pública (publishable/anon)</label>
+          <input id="supabaseKey" type="password" autocomplete="off" placeholder="Cole aqui a chave pública do projeto" required>
+          <small class="hint">Use somente a chave pública. Nunca cole a service_role/secret key no site.</small>
+        </div>
+        <div class="field">
+          <label for="syncEmail">E-mail</label>
+          <input id="syncEmail" type="email" autocomplete="username" required>
+        </div>
+        <div class="field">
+          <label for="syncPassword">Senha</label>
+          <input id="syncPassword" type="password" autocomplete="current-password" minlength="6" required>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">
+        <button class="btn" id="syncLogin" type="submit">Entrar / criar conta</button>
+        <button class="btn secondary" id="syncNow" type="button">Sincronizar agora</button>
+        <button class="btn secondary" id="syncLogout" type="button">Sair</button>
+      </div>
+    </form>
+    <p id="syncStatus" class="hint" role="status" style="margin-top:16px">Status: ainda não conectado</p>
+  </div>
+</div>
+
 <div class="toast" id="toast" role="status"></div>
 <div class="modal-backdrop" id="modal"><div class="modal"><div class="modal-head"><h2>Importar backup</h2><button class="xbtn" id="closeModal" aria-label="Fechar">×</button></div><p>Selecione um backup JSON exportado por este site. A importação substituirá os dados atuais deste navegador.</p><input id="backupFile" type="file" accept=".json,application/json"><div style="margin-top:18px"><button class="btn danger" id="importBackup">Importar e substituir dados</button></div></div></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>

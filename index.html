@@ -155,7 +155,27 @@ function setSyncStatus(message){const el=$('syncStatus');if(el)el.textContent='S
 function getCloudConfig(){return {url:localStorage.getItem('financeSupabaseUrl')||'',key:localStorage.getItem('financeSupabaseKey')||''}}
 function initCloudClient(){const cfg=getCloudConfig();if(!cfg.url||!cfg.key||!window.supabase?.createClient){cloudClient=null;return null}cloudClient=window.supabase.createClient(cfg.url,cfg.key);return cloudClient}
 async function syncDataToCloud(){if(!cloudClient||!cloudSession||syncBusy)return;syncBusy=true;try{const {error}=await cloudClient.from('finance_data').upsert({user_id:cloudSession.user.id,payload:data,updated_at:new Date().toISOString()},{onConflict:'user_id'});if(error)throw error;setSyncStatus('Sincronizado com a nuvem • '+cloudSession.user.email)}finally{syncBusy=false}}
-async function loadCloudData(){if(!cloudClient||!cloudSession)return;setSyncStatus('Conectando…');const {data:row,error}=await cloudClient.from('finance_data').select('payload').eq('user_id',cloudSession.user.id).maybeSingle();if(error)throw error;if(row?.payload&&Array.isArray(row.payload.entries)&&Array.isArray(row.payload.categories)){data=row.payload;localStorage.setItem(STORAGE_KEY,JSON.stringify(data));renderAll()}else{await syncDataToCloud()}setSyncStatus('Conectado como '+cloudSession.user.email+' • sincronização ativa');}
+async function loadCloudData(){
+ if(!cloudClient||!cloudSession)return;
+ setSyncStatus('Lendo dados da nuvem…');
+ const {data:row,error}=await cloudClient.from('finance_data').select('payload,updated_at').eq('user_id',cloudSession.user.id).maybeSingle();
+ if(error)throw error;
+ // Segurança: nunca envie dados locais vazios para a nuvem só porque a leitura falhou ou a linha não apareceu.
+ if(!row){setSyncStatus('Conta conectada, mas não encontrei dados para este usuário. Nenhum dado foi enviado nem apagado. Confira se é a mesma conta.');return;}
+ let payload=row.payload;
+ if(typeof payload==='string'){try{payload=JSON.parse(payload)}catch(e){throw new Error('O payload da nuvem não pôde ser interpretado. Os dados locais foram preservados.')}}
+ if(!payload||!Array.isArray(payload.entries)||!Array.isArray(payload.categories)){throw new Error('Os dados da nuvem têm estrutura inesperada. Nada foi sobrescrito; dados locais preservados.')}
+ // Mescla por ID: mantém lançamentos/categorias já existentes neste dispositivo e também recupera os da nuvem.
+ const localData=(data&&Array.isArray(data.entries)&&Array.isArray(data.categories))?data:{entries:[],categories:[]};
+ const mergeById=(cloudItems,localItems)=>{const map=new Map();for(const item of cloudItems)map.set(String(item.id),item);for(const item of localItems)map.set(String(item.id),item);return Array.from(map.values())};
+ const merged={...payload,...localData,entries:mergeById(payload.entries,localData.entries),categories:mergeById(payload.categories,localData.categories)};
+ const hadLocalOnly=merged.entries.length>payload.entries.length||merged.categories.length>payload.categories.length;
+ data=merged;
+ localStorage.setItem(STORAGE_KEY,JSON.stringify(data));
+ renderAll();
+ if(hadLocalOnly){await syncDataToCloud();}
+ setSyncStatus('Carregado e mesclado: '+data.entries.length+' lançamentos e '+data.categories.length+' categorias • '+cloudSession.user.email);
+}
 async function connectCloud(){const url=$('supabaseUrl').value.trim(),key=$('supabaseKey').value.trim();if(!url||!key)throw new Error('Informe a URL e a chave pública do Supabase.');localStorage.setItem('financeSupabaseUrl',url);localStorage.setItem('financeSupabaseKey',key);initCloudClient();if(!cloudClient)throw new Error('Não foi possível inicializar o Supabase. Confira a URL e a chave.');const email=$('syncEmail').value.trim(),password=$('syncPassword').value;let result=await cloudClient.auth.signInWithPassword({email,password});if(result.error){const signUp=await cloudClient.auth.signUp({email,password});if(signUp.error)throw new Error('Não foi possível entrar/criar conta: '+signUp.error.message);if(!signUp.data.session){setSyncStatus('Conta criada. Confirme seu e-mail e depois entre novamente.');return}result=signUp;}cloudSession=result.data.session;if(!cloudSession){const {data:sessionData,error}=await cloudClient.auth.getSession();if(error)throw error;cloudSession=sessionData.session}if(cloudSession)await loadCloudData();}
 
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,8)}
@@ -226,7 +246,7 @@ window.addEventListener('resize',()=>{if(document.querySelector('.page.active')?
 $('syncOpen').addEventListener('click',async()=>{$('syncModal').style.display='flex';const cfg=getCloudConfig();$('supabaseUrl').value=cfg.url;$('supabaseKey').value=cfg.key;if(cloudClient&&cloudSession)setSyncStatus('Conectado como '+cloudSession.user.email+' • sincronização ativa');});
 $('closeSync').addEventListener('click',()=>$('syncModal').style.display='none');$('syncModal').addEventListener('click',e=>{if(e.target===$('syncModal'))$('syncModal').style.display='none'});
 $('syncConfigForm').addEventListener('submit',async e=>{e.preventDefault();$('syncLogin').disabled=true;setSyncStatus('Conectando…');try{await connectCloud();toast('Configuração de sincronização processada.')}catch(err){setSyncStatus(err.message||'Falha na conexão.');toast('Não foi possível sincronizar. Confira a configuração.')}finally{$('syncLogin').disabled=false}});
-$('syncNow').addEventListener('click',async()=>{try{if(!cloudClient){initCloudClient();if(!cloudClient)throw new Error('Preencha URL, chave e entre na sua conta primeiro.')}if(!cloudSession){const {data:sd,error}=await cloudClient.auth.getSession();if(error)throw error;cloudSession=sd.session}if(!cloudSession)throw new Error('Entre na sua conta para sincronizar.');await syncDataToCloud();setSyncStatus('Sincronizado com a nuvem • '+cloudSession.user.email);toast('Dados sincronizados!')}catch(err){setSyncStatus(err.message||'Falha na sincronização.')}});
+$('syncNow').addEventListener('click',async()=>{try{if(!cloudClient){initCloudClient();if(!cloudClient)throw new Error('Preencha URL, chave e entre na sua conta primeiro.')}if(!cloudSession){const {data:sd,error}=await cloudClient.auth.getSession();if(error)throw error;cloudSession=sd.session}if(!cloudSession)throw new Error('Entre na sua conta para sincronizar.');await loadCloudData();toast('Leitura da nuvem concluída. Confira o status.')}catch(err){setSyncStatus(err.message||'Falha ao ler a nuvem. Os dados locais foram preservados.')}});
 $('syncLogout').addEventListener('click',async()=>{try{if(cloudClient)await cloudClient.auth.signOut();cloudSession=null;setSyncStatus('Sessão encerrada. Seus dados locais foram mantidos.')}catch(err){setSyncStatus(err.message||'Não foi possível sair.')}});
 (async()=>{try{if(initCloudClient()){const {data:sd}=await cloudClient.auth.getSession();cloudSession=sd.session;if(cloudSession)await loadCloudData()}}catch(err){setSyncStatus('Dados locais disponíveis; nuvem indisponível: '+(err.message||'erro'))}})();
 
